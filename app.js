@@ -54,18 +54,18 @@ app.post('/api/products/filter', (req, res) => {
 });
 
 // Semantic search with simple filtering (for demo purposes)
-app.post('/api/products/search', (req, res) => {
-  const query = req.body.query.toLowerCase();
+app.get('/api/products/search', (req, res) => {
+  const query = req.query.query.toLowerCase();
   const filteredProducts = products.filter(product => product.name.toLowerCase().includes(query) || product.description.toLowerCase().includes(query));
   res.json(filteredProducts);
 });
 
 // Suggest product names based on query
-app.post('/api/products/suggest', (req, res) => {
-  const query = req.body.query.toLowerCase();
-  const suggestions = products.filter(product => product.name.toLowerCase().includes(query)).map(product => product.name);
-  res.json(suggestions);
-});
+// app.post('/api/products/suggest', (req, res) => {
+//   const query = req.body.query.toLowerCase();
+//   const suggestions = products.filter(product => product.name.toLowerCase().includes(query)).map(product => product.name);
+//   res.json(suggestions);
+// });
 
 let users = [];
 
@@ -134,7 +134,8 @@ app.post('/api/auth/login', (req, res) => {
     // Respond with the JWT token
     res.json({
       message: 'Login successful',
-      token
+      token,
+      user
     });
   });
 });
@@ -143,38 +144,139 @@ app.post('/api/auth/login', (req, res) => {
 const tokenizer = new natural.WordTokenizer();
 
 // Search endpoint for semantic search and auto-completion
-app.get('/search', (req, res) => {
-  const query = req.query.query;
-  if (!query) {
-    return res.status(400).json({ error: 'Query parameter is required' });
-  }
+// app.get('/api/products/search', (req, res) => {
+//   const query = req.query.query;
+//   if (!query) {
+//     return res.status(400).json({ error: 'Query parameter is required' });
+//   }
 
-  // Tokenize and match query with product data
-  const tokens = tokenizer.tokenize(query.toLowerCase());
+//   // Tokenize and match query with product data
+//   const tokens = tokenizer.tokenize(query.toLowerCase());
 
-  // Semantic search: Filter products based on token match in name and description
-  const results = products.filter(product => {
-    const productText = `${product.name.toLowerCase()} ${product.description.toLowerCase()}`;
-    return tokens.some(token => productText.includes(token));
-  });
+//   // Semantic search: Filter products based on token match in name and description
+//   const results = products.filter(product => {
+//     const productText = `${product.name.toLowerCase()} ${product.description.toLowerCase()}`;
+//     return tokens.some(token => productText.includes(token));
+//   });
 
-  res.json({ results });
-});
+//   res.json({ results });
+// });
 
 // Auto-suggestions endpoint
-app.get('/suggestions', (req, res) => {
+app.get('/api/products/suggestions', (req, res) => {
   const query = req.query.query;
   if (!query) {
     return res.status(400).json({ error: 'Query parameter is required' });
   }
 
   // Filter products based on query
-  const suggestions = products.filter(product => {
-    return product.name.toLowerCase().includes(query.toLowerCase());
-  }).map(product => product.name);
-
+  // if(query ){
+    const suggestions = products.filter(product => {
+      return product.name.toLowerCase().includes(query.toLowerCase());
+    }).map(product => product.name);
+  
+  // }else if (query.)
+  
   res.json(suggestions);
 });
+
+// ----------------- MOCK DATA -----------------
+
+// Sample user purchase history
+const userPurchases = {
+  user1: [1, 2], // Purchased Product 1 and 2
+  user2: [2, 3],
+  user3: [3,4,5]
+};
+
+// Sample product similarity (for content-based)
+const productSimilarity = {
+  1: [2, 3], // Similar to Product 1
+  2: [1, 4],
+  3: [2, 5],
+  4: [5],
+  5: [4]
+};
+
+// Mock user interests for ranking
+const userInterests = {
+  user1: { brand: 'Brand A', color: 'White' },
+  user2: { size: 'M', color: 'Black' },
+  user3: { brand: 'Brand C', size: 'XL' }
+};
+
+// ----------------- COLLABORATIVE FILTERING -----------------
+app.get('/api/recommendations/collaborative', (req, res) => {
+  const userId = req.query.userId;
+  const userProducts = userPurchases[userId] || [];
+
+  // Find other users who bought the same products
+  let similarUserProducts = [];
+  for (const [otherUser, purchases] of Object.entries(userPurchases)) {
+    if (otherUser !== userId && purchases.some(p => userProducts.includes(p))) {
+      similarUserProducts.push(...purchases.filter(p => !userProducts.includes(p)));
+    }
+  }
+
+  // Remove duplicates
+  const uniqueRecommendations = [...new Set(similarUserProducts)];
+
+  const recommendedProducts = products.filter(p => uniqueRecommendations.includes(p.id));
+  res.json(recommendedProducts);
+});
+
+// ----------------- CONTENT-BASED FILTERING -----------------
+app.get('/api/recommendations/content', (req, res) => {
+  const userId = req.query.userId;
+  const userProducts = userPurchases[userId] || [];
+
+  let similarProductIds = new Set();
+  userProducts.forEach(pId => {
+    const similar = productSimilarity[pId] || [];
+    similar.forEach(simId => similarProductIds.add(simId));
+  });
+
+  // Filter out already purchased
+  userProducts.forEach(pId => similarProductIds.delete(pId));
+
+  const recommendedProducts = products.filter(p => similarProductIds.has(p.id));
+  res.json(recommendedProducts);
+});
+
+// ----------------- REAL-TIME RECOMMENDATIONS -----------------
+app.get('/api/recommendations/realtime', (req, res) => {
+  const query = req.query.query.toLowerCase();
+  const userId = req.query.userId;
+
+  const matched = products.filter(p =>
+    p.name.toLowerCase().includes(query) ||
+    p.description.toLowerCase().includes(query)||
+    p.brand.toLowerCase().includes(query) ||
+    p.size.toLowerCase().includes(query) ||
+    p.color.toLowerCase().includes(query)
+  );
+
+  res.json(matched.slice(0, 5)); // Just return top 5 matches
+});
+
+// ----------------- PERSONALIZED RANKING -----------------
+app.get('/api/recommendations/rank', (req, res) => {
+  const userId = req.query.userId;
+  const prefs = userInterests[userId] || {};
+
+  const ranked = products
+    .map(product => {
+      let score = 0;
+      if (prefs.brand && product.brand === prefs.brand) score += 2;
+      if (prefs.size && product.size === prefs.size) score += 1;
+      if (prefs.color && product.color === prefs.color) score += 1;
+      return { ...product, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  res.json(ranked.slice(0, 5)); // Return top 5 ranked products
+});
+
 
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);

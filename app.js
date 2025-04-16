@@ -1,282 +1,30 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const natural = require('natural');
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
+
+const authRoutes = require('./routes/authRoutes');
+const productRoutes = require('./routes/productRoutes');
+const recommendationRoutes = require('./routes/recommendationRoutes');
+
+
+dotenv.config(); // Load environment variables
+
 const app = express();
 const port = 3000;
 
+// Connect to MongoDB
+connectDB();
+
+// Middlewares
+app.use(express.json());
 app.use(cors());
 app.use(bodyParser.json());
 
-// Sample Product Data
-const products = [
-    { id: 1, name: 'Product 1', description: 'Description 1', price: 19.99, brand: 'Brand A', size: 'M', color: 'Red', imageUrl: 'https://images.unsplash.com/photo-1561948959-e8570b8ea618' },
-    { id: 2, name: 'Product 2', description: 'Description 2', price: 29.99, brand: 'Brand B', size: 'L', color: 'Blue', imageUrl: 'https://images.unsplash.com/photo-1572390843689-4d04f6b0b075' },
-    { id: 3, name: 'Product 3', description: 'Description 3', price: 39.99, brand: 'Brand A', size: 'S', color: 'Green', imageUrl: 'https://images.unsplash.com/photo-1600840156607-13bda5c8d8d6' },
-    { id: 4, name: 'Product 4', description: 'Description 4', price: 49.99, brand: 'Brand C', size: 'XL', color: 'Black', imageUrl: 'https://images.unsplash.com/photo-1612154711604-d96e767c70a2' },
-    { id: 5, name: 'Product 5', description: 'Description 5', price: 59.99, brand: 'Brand A', size: 'M', color: 'White', imageUrl: 'https://images.unsplash.com/photo-1518684079-c0ad6f5b98f3' },
-    { id: 6, name: 'Product 6', description: 'Description 6', price: 50.99, brand: 'Brand B', size: 'M', color: 'White', imageUrl: 'https://images.unsplash.com/photo-1518684079-c0ad6f5b98f3' },
-    { id: 7, name: 'Product 7', description: 'Description 7', price: 51.99, brand: 'Brand C', size: 'M', color: 'White', imageUrl: 'https://images.unsplash.com/photo-1518684079-c0ad6f5b98f3' },
-    { id: 8, name: 'Product 8', description: 'Description 8', price: 53.99, brand: 'Brand D', size: 'M', color: 'White', imageUrl: 'https://images.unsplash.com/photo-1518684079-c0ad6f5b98f3' },
-    { id: 9, name: 'Product 9', description: 'Description 9', price: 54.99, brand: 'Brand A', size: 'M', color: 'White', imageUrl: 'https://images.unsplash.com/photo-1518684079-c0ad6f5b98f3' },
-    { id: 10, name: 'Product 10', description: 'Description 10', price: 54.99, brand: 'Brand C', size: 'M', color: 'White', imageUrl: 'https://images.unsplash.com/photo-1518684079-c0ad6f5b98f3' },
-    
-  ];
-  
-const SECRET_KEY = process.env.SECRET_KEY || 'secret-key'  ;
-
-// Get all products
-app.get('/api/products', (req, res) => {
-  res.json(products);
-});
-
-// Search products with filtering
-app.post('/api/products/filter', (req, res) => {
-  const { brand, size, color, price } = req.body;
-  let filteredProducts = products;
-
-  if (brand) {
-    filteredProducts = filteredProducts.filter(product => product.brand === brand);
-  }
-  if (size) {
-    filteredProducts = filteredProducts.filter(product => product.size === size);
-  }
-  if (color) {
-    filteredProducts = filteredProducts.filter(product => product.color === color);
-  }
-  if (price && price.min != undefined && price.max != undefined) {
-    filteredProducts = filteredProducts.filter(product => product.price >= price.min && product.price <= price.max);
-  }
-
-  res.json(filteredProducts);
-});
-
-// Semantic search with simple filtering (for demo purposes)
-app.get('/api/products/search', (req, res) => {
-  const query = req.query.query.toLowerCase();
-  const filteredProducts = products.filter(product => product.name.toLowerCase().includes(query) || product.description.toLowerCase().includes(query));
-  res.json(filteredProducts);
-});
-
-// Suggest product names based on query
-// app.post('/api/products/suggest', (req, res) => {
-//   const query = req.body.query.toLowerCase();
-//   const suggestions = products.filter(product => product.name.toLowerCase().includes(query)).map(product => product.name);
-//   res.json(suggestions);
-// });
-
-let users = [];
-
-// Register route
-app.post('/api/auth/register', (req, res) => {
-  const { name, email, password } = req.body;
-
-  if (!name || !email || !password) {
-    return res.status(400).json({ message: 'All fields are required' });
-  }
-
-  // Check if email is already registered
-  const existingUser = users.find(user => user.email === email);
-  if (existingUser) {
-    return res.status(400).json({ message: 'Email is already in use' });
-  }
-
-  // Hash the password
-  const salt = bcrypt.genSaltSync(10);
-  const hashedPassword = bcrypt.hashSync(password, salt);
-
-  // Create the new user object
-  const newUser = {
-    name,
-    email,
-    password: hashedPassword
-  };
-
-  // Store the user in memory (replace with database in production)
-  users.push(newUser);
-
-  // Generate JWT token (optional step for now, typically used after login)
-  const token = jwt.sign({ email: newUser.email }, 'secret-key', { expiresIn: '1h' });
-
-  // Return a success message and the token
-  res.status(201).json({ message: 'User registered successfully', token });
-});
-
-//Login route
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-
-  // Check if email is provided
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required' });
-  }
-
-  // Find the user by email
-  const user = users.find((user) => user.email === email);
-  if (!user) {
-    return res.status(400).json({ message: 'Invalid email or password' });
-  }
-
-  // Compare password with the hashed password
-  bcrypt.compare(password, user.password, (err, isMatch) => {
-    if (err) {
-      return res.status(500).json({ message: 'Error comparing passwords' });
-    }
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid email or password' });
-    }
-
-    // Generate JWT token for the logged-in user
-    const token = jwt.sign({ email: user.email }, SECRET_KEY, { expiresIn: '1h' });
-
-    // Respond with the JWT token
-    res.json({
-      message: 'Login successful',
-      token,
-      user
-    });
-  });
-});
-
-// Tokenizer for basic NLP
-const tokenizer = new natural.WordTokenizer();
-
-// Search endpoint for semantic search and auto-completion
-// app.get('/api/products/search', (req, res) => {
-//   const query = req.query.query;
-//   if (!query) {
-//     return res.status(400).json({ error: 'Query parameter is required' });
-//   }
-
-//   // Tokenize and match query with product data
-//   const tokens = tokenizer.tokenize(query.toLowerCase());
-
-//   // Semantic search: Filter products based on token match in name and description
-//   const results = products.filter(product => {
-//     const productText = `${product.name.toLowerCase()} ${product.description.toLowerCase()}`;
-//     return tokens.some(token => productText.includes(token));
-//   });
-
-//   res.json({ results });
-// });
-
-// Auto-suggestions endpoint
-app.get('/api/products/suggestions', (req, res) => {
-  const query = req.query.query;
-  if (!query) {
-    return res.status(400).json({ error: 'Query parameter is required' });
-  }
-
-  // Filter products based on query
-  // if(query ){
-    const suggestions = products.filter(product => {
-      return product.name.toLowerCase().includes(query.toLowerCase());
-    }).map(product => product.name);
-  
-  // }else if (query.)
-  
-  res.json(suggestions);
-});
-
-// ----------------- MOCK DATA -----------------
-
-// Sample user purchase history
-const userPurchases = {
-  user1: [1, 2], // Purchased Product 1 and 2
-  user2: [2, 3],
-  user3: [3,4,5]
-};
-
-// Sample product similarity (for content-based)
-const productSimilarity = {
-  1: [2, 3], // Similar to Product 1
-  2: [1, 4],
-  3: [2, 5],
-  4: [5],
-  5: [4]
-};
-
-// Mock user interests for ranking
-const userInterests = {
-  user1: { brand: 'Brand A', color: 'White' },
-  user2: { size: 'M', color: 'Black' },
-  user3: { brand: 'Brand C', size: 'XL' }
-};
-
-// ----------------- COLLABORATIVE FILTERING -----------------
-app.get('/api/recommendations/collaborative', (req, res) => {
-  const userId = req.query.userId;
-  const userProducts = userPurchases[userId] || [];
-
-  // Find other users who bought the same products
-  let similarUserProducts = [];
-  for (const [otherUser, purchases] of Object.entries(userPurchases)) {
-    if (otherUser !== userId && purchases.some(p => userProducts.includes(p))) {
-      similarUserProducts.push(...purchases.filter(p => !userProducts.includes(p)));
-    }
-  }
-
-  // Remove duplicates
-  const uniqueRecommendations = [...new Set(similarUserProducts)];
-
-  const recommendedProducts = products.filter(p => uniqueRecommendations.includes(p.id));
-  res.json(recommendedProducts);
-});
-
-// ----------------- CONTENT-BASED FILTERING -----------------
-app.get('/api/recommendations/content', (req, res) => {
-  const userId = req.query.userId;
-  const userProducts = userPurchases[userId] || [];
-
-  let similarProductIds = new Set();
-  userProducts.forEach(pId => {
-    const similar = productSimilarity[pId] || [];
-    similar.forEach(simId => similarProductIds.add(simId));
-  });
-
-  // Filter out already purchased
-  userProducts.forEach(pId => similarProductIds.delete(pId));
-
-  const recommendedProducts = products.filter(p => similarProductIds.has(p.id));
-  res.json(recommendedProducts);
-});
-
-// ----------------- REAL-TIME RECOMMENDATIONS -----------------
-app.get('/api/recommendations/realtime', (req, res) => {
-  const query = req.query.query.toLowerCase();
-  const userId = req.query.userId;
-
-  const matched = products.filter(p =>
-    p.name.toLowerCase().includes(query) ||
-    p.description.toLowerCase().includes(query)||
-    p.brand.toLowerCase().includes(query) ||
-    p.size.toLowerCase().includes(query) ||
-    p.color.toLowerCase().includes(query)
-  );
-
-  res.json(matched.slice(0, 5)); // Just return top 5 matches
-});
-
-// ----------------- PERSONALIZED RANKING -----------------
-app.get('/api/recommendations/rank', (req, res) => {
-  const userId = req.query.userId;
-  const prefs = userInterests[userId] || {};
-
-  const ranked = products
-    .map(product => {
-      let score = 0;
-      if (prefs.brand && product.brand === prefs.brand) score += 2;
-      if (prefs.size && product.size === prefs.size) score += 1;
-      if (prefs.color && product.color === prefs.color) score += 1;
-      return { ...product, score };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  res.json(ranked.slice(0, 5)); // Return top 5 ranked products
-});
-
+app.use('/api/auth', authRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/recommendations', recommendationRoutes);
 
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
